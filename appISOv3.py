@@ -1903,7 +1903,7 @@ if start_analyze:
         st.session_state.table_statistics = stats_df
         st.session_state.cos2t = cos2t
     else:
-        num_grains = 0
+        st.session_state.num_grains = 0
         st.session_state.data_frame = None
 
     # with toptabs[0]:
