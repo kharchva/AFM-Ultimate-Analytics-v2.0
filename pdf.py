@@ -700,6 +700,7 @@ def generate_pdf_report_new(filename,width,height,conditions1,conditions2,dots_h
         # elements.append(Spacer(1, 25))
         table_counter += 1
 
+    if figs_dict_size is not None:
         elements.append(PageBreak())
         elements.append(
             Paragraph(f"<b>{sec_counter}.1. Size distributions</b>", styles["Heading3"])
@@ -715,6 +716,7 @@ def generate_pdf_report_new(filename,width,height,conditions1,conditions2,dots_h
             elements.append(Spacer(1, 25))
             fig_counter += 1
 
+    if figs_dict_geometry is not None:
         elements.append(PageBreak())
         elements.append(
             Paragraph(f"<b>{sec_counter}.2. Geometry of structures</b>", styles["Heading3"])
@@ -730,6 +732,7 @@ def generate_pdf_report_new(filename,width,height,conditions1,conditions2,dots_h
             elements.append(Spacer(1, 25))
             fig_counter += 1
 
+    if figs_dict_distances is not None:
         elements.append(PageBreak())
         elements.append(
             Paragraph(f"<b>{sec_counter}.3. Distribution of distances</b>", styles["Heading3"])
@@ -745,43 +748,45 @@ def generate_pdf_report_new(filename,width,height,conditions1,conditions2,dots_h
             elements.append(Spacer(1, 25))
             fig_counter += 1
 
-        if figs_dict_clustering_pairplot is not None:
-            sec_counter += 1
-            elements.append(PageBreak())
-            elements.append(
-                Paragraph(f"<b>{sec_counter}. Clustering</b>", styles["Heading1"])
-            )
-            elements.append(Spacer(1, 25))
-            caption, fig = next(iter(figs_dict_clustering_pairplot.items()))
-            elements.append(
-                Paragraph(f"<b>{sec_counter}.1. {caption}</b>", styles["Heading3"])
-            )
-            elements.append(Spacer(1, 25))
-            # img = input_figure(caption, fig, 17)
-            img = input_figure_png(fig, 17)
+    if figs_dict_clustering_pairplot is not None:
+        sec_counter += 1
+        elements.append(PageBreak())
+        elements.append(
+            Paragraph(f"<b>{sec_counter}. Clustering</b>", styles["Heading1"])
+        )
+        elements.append(Spacer(1, 25))
+        caption, fig = next(iter(figs_dict_clustering_pairplot.items()))
+        elements.append(
+            Paragraph(f"<b>{sec_counter}.1. {caption}</b>", styles["Heading3"])
+        )
+        elements.append(Spacer(1, 25))
+        # img = input_figure(caption, fig, 17)
+        img = input_figure_png(fig, 17)
+        elements.append(img)
+        elements.append(Spacer(1, 6))
+        elements.append(
+            Paragraph(f"<b>Figure {sec_counter}.{fig_counter}. {caption}</b>", styles["Normal"])
+        )
+        elements.append(Spacer(1, 25))
+        fig_counter += 1
+
+    if figs_dict_clustering_violinplot is not None:
+        elements.append(Spacer(1, 25))
+        elements.append(PageBreak())
+        elements.append(
+            Paragraph(f"<b>{sec_counter}.2. Violin plots showing distributions of morphological parameters</b>", styles["Heading3"])
+        )
+        # elements.append(Spacer(1, 25))
+        for caption, fig in figs_dict_clustering_violinplot.items():
+            # img = input_figure(caption, fig, 14)
+            img = input_figure_png(fig, 14)
             elements.append(img)
-            elements.append(Spacer(1, 6))
+            elements.append(Spacer(1, 5))
             elements.append(
                 Paragraph(f"<b>Figure {sec_counter}.{fig_counter}. {caption}</b>", styles["Normal"])
             )
-            elements.append(Spacer(1, 25))
+            elements.append(Spacer(1, 13))
             fig_counter += 1
-            elements.append(Spacer(1, 25))
-            elements.append(PageBreak())
-            elements.append(
-                Paragraph(f"<b>{sec_counter}.2. Violin plots showing distributions of morphological parameters</b>", styles["Heading3"])
-            )
-            # elements.append(Spacer(1, 25))
-            for caption, fig in figs_dict_clustering_violinplot.items():
-                # img = input_figure(caption, fig, 14)
-                img = input_figure_png(fig, 14)
-                elements.append(img)
-                elements.append(Spacer(1, 5))
-                elements.append(
-                    Paragraph(f"<b>Figure {sec_counter}.{fig_counter}. {caption}</b>", styles["Normal"])
-                )
-                elements.append(Spacer(1, 13))
-                fig_counter += 1
 
     doc.build(elements)
     pdf = buffer.getvalue()

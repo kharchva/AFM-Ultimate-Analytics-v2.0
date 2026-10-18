@@ -71,8 +71,6 @@ def height_analysis(img, h_val, min_a, max_a, s_xy, full_image_area_nm2, mode, t
         area_nm2 = area_px * (s_xy ** 2)
         perimeter_nm = cv2.arcLength(cnt, True) * s_xy
         equiv_d = np.sqrt(4 * area_nm2 / np.pi)
-        radius = equiv_d / 2
-        radii.append(radius)
         circularity = (4 * np.pi * area_nm2) / (perimeter_nm ** 2) if perimeter_nm > 0 else 0
 
         if len(cnt) >= 5:
@@ -80,17 +78,19 @@ def height_analysis(img, h_val, min_a, max_a, s_xy, full_image_area_nm2, mode, t
             major = max(MA, ma) * s_xy
             minor = min(MA, ma) * s_xy
             aspect = major / minor if minor > 0 else 0
+            theta_folded = np.minimum(angle, 180 - angle)
         else:
-            major = 0
-            minor = 0
-            angle = 0
-            aspect = 1.0
+            major = np.nan
+            minor = np.nan
+            aspect = np.nan
+            theta_folded = np.nan
+            angle = np.nan
 
         M = cv2.moments(cnt)
         if M["m00"] != 0:
             centroids.append([(M["m10"] / M["m00"]) * s_xy, (M["m01"] / M["m00"]) * s_xy])
+            radii.append(equiv_d / 2)
 
-        theta_folded = np.minimum(angle, 180 - angle)
         data_list.append({
             "Area (nm^2)": area_nm2,
             "Diameter (nm)": equiv_d,
@@ -105,34 +105,24 @@ def height_analysis(img, h_val, min_a, max_a, s_xy, full_image_area_nm2, mode, t
 
     df = pd.DataFrame(data_list)
     mean_values = df.copy()
-    # mean_values = {}
     if not df.empty:
-        # mean_values = df.mean(numeric_only=True).to_dict()
         mean_values = df.mean(numeric_only=True)
-
         num_grains = len(centroids)
-
-        edge_distances = []
-        center_distances = []
-        k_value = min(num_grains, 8)
         if num_grains > 1:
             tree = cKDTree(centroids)
-            # nnd, idx = tree.query(centroids, k=8)
-            nnd, idx = tree.query(centroids, k=k_value)
+            nnd, idx = tree.query(centroids, k=num_grains)
+            edge_distances = []
+            center_distances = []
             for i in range(num_grains):
-                best_center_dist = np.inf
-                best_edge_dist = np.inf
-                # for k in range(1, 8):
-                for k in range(1, k_value):
+                for k in range(1, num_grains):
                     j = idx[i, k]
                     center_dist = nnd[i, k]
                     edge_dist = center_dist - (radii[i] + radii[j])
-                    if edge_dist > 0.1 and edge_dist < best_edge_dist:  # (0.1 means 1 angstrom)
-                        best_edge_dist = edge_dist
-                        best_center_dist = center_dist
-                if best_center_dist < np.inf:
-                    center_distances.append(best_center_dist)
-                    edge_distances.append(best_edge_dist)
+
+                    if edge_dist > 0.1:
+                        center_distances.append(center_dist)
+                        edge_distances.append(edge_dist)
+                        break
 
             mean_nn = np.mean(center_distances)
             mean_nn_grains = np.mean(edge_distances)
@@ -141,11 +131,11 @@ def height_analysis(img, h_val, min_a, max_a, s_xy, full_image_area_nm2, mode, t
             R_grains = mean_nn_grains / (0.5 / np.sqrt(rho))
 
         else:
-            mean_nn = 0.0
-            mean_nn_grains = 0.0
+            mean_nn = np.nan
+            mean_nn_grains = np.nan
             rho = num_grains / full_image_area_nm2
-            R_centroids = 0.0
-            R_grains = 0.0
+            R_centroids = np.nan
+            R_grains = np.nan
 
         mean_values["Nearest Neighbor (nm)"] = mean_nn
         mean_values["Edge Distance (nm)"] = mean_nn_grains

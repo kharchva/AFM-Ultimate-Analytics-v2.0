@@ -12,6 +12,7 @@ from height import make_figure_heightdependence_png
 import pdf
 from role import USERS
 
+
 if "lang" not in st.session_state:
     st.session_state.lang = "EN"  # За замовчуванням англійська
 lang_choice = st.sidebar.selectbox("🌐 Language / Мова", ["EN", "UA"])
@@ -80,9 +81,11 @@ DEFAULT_STATE = {
     "res_sens": None,
     "display_h0": None,
     "data_frame": None,
+    "data_elips": None,
     "labels": None,
     "distances": None,
     "centroids": None,
+    "num_grains": None,
     "centroids_stat": None,
     "roughness": None,
     "table_roughness": None,
@@ -183,10 +186,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# if "authenticated" not in st.session_state:
+#     st.session_state.authenticated = False
+#     st.session_state.username = "demo"
+#     st.session_state.role = "viewer"
+
+
 if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-    st.session_state.username = "demo"
-    st.session_state.role = "viewer"
+    st.session_state.authenticated = True
+    st.session_state.username = "user"
+    st.session_state.role = "scientist"
 
 
 # uploaded_file_name = None
@@ -195,12 +204,12 @@ run_sens = None
 start_analyze = None
 
 with st.sidebar:
-    st.divider()
-    c1sb, c2sb = st.columns(2)
-    with c1sb:
-        st.write(f"👤 {st.session_state.role}")
-    with c2sb:
-        logout()
+    # st.divider()
+    # c1sb, c2sb = st.columns(2)
+    # with c1sb:
+    #     st.write(f"👤 {st.session_state.role}")
+    # with c2sb:
+    #     logout()
     st.divider()
     uploaded_file = st.file_uploader(
         f"📂 {LANG['Завантажте файл']}",
@@ -307,6 +316,7 @@ with toptabs[tab_idx]:
                 st.error(f"{LANG['Помилка надсилання']}")
 
 role = st.session_state.get("role", "viewer")
+
 # text_in_fig = LANG['Рисунок захищено'] if role == "viewer" else ""
 text_in_fig = "Figure is protected" if role == "viewer" else ""
 
@@ -1106,21 +1116,21 @@ def height_dependent_analysis_all():
                 else:
                     res_sens.append({
                         'height': h_val * z_scale,
-                        'area': 0.0,
-                        'diameter': 0.0,
-                        'perimeter': 0.0,
-                        'circularity': 0.0,
-                        'major': 0.0,
-                        'minor': 0.0,
-                        'aspect': 0.0,
-                        'angle': 0.0,
-                        'foldangle': 0.0,
-                        'centersdist': 0.0,
-                        'edgedist': 0.0,
-                        'r_center': 0.0,
-                        'r_edge': 0.0,
+                        'area': np.nan,
+                        'diameter': np.nan,
+                        'perimeter': np.nan,
+                        'circularity': np.nan,
+                        'major': np.nan,
+                        'minor': np.nan,
+                        'aspect': np.nan,
+                        'angle': np.nan,
+                        'foldangle': np.nan,
+                        'centersdist': np.nan,
+                        'edgedist': np.nan,
+                        'r_center': np.nan,
+                        'r_edge': np.nan,
                         'density': 0.0,
-                        'number': 0.0
+                        'number': 0
                     })
                 prog.progress(int((i + 1) / len(h_range) * 100))
 
@@ -1382,7 +1392,7 @@ def show_height_dependence(x, y, yname, fname, caption, color, h):
 @st.fragment
 def segmentation_and_filtration():
     if st.session_state.analysis is None:
-        return None, None, None, None
+        return None, None, None, None, None, None, None
 
     # st.divider()
     st.subheader(f"🔢 {LANG['Сегментація та фільтрація']}")
@@ -1470,8 +1480,15 @@ def segmentation_and_filtration():
         st.session_state.labels = labels
         st.session_state.conditions2 = [exclude_min_area, min_diameter, exclude_max_area, max_diameter, mode, h0_nm]
         num_of_structures = num_labels - 1
+
+        # if num_of_structures != st.session_state.num_of_structures_h0:
+        #     st.session_state.num_of_structures_h0 = num_of_structures
+        #     st.session_state.dens_of_structures_h0 = num_of_structures / full_area_cm2
+        #     st.rerun()
+
         st.session_state.num_of_structures_h0 = num_of_structures
         st.session_state.dens_of_structures_h0 = num_of_structures / full_area_cm2
+
         if num_of_structures > 0:
             st.success(
                 f"{num_of_structures} {LANG['структур ідентифіковано']}  \n {LANG['Густина структур']} = {num_of_structures / full_area_cm2 / 1E10:.2f} x 10¹⁰ {LANG['(см⁻²)']}")
@@ -1500,7 +1517,16 @@ def segmentation_and_filtration():
             disabled=(role == "viewer")
         )
 
-    return filtered_image, h0_nm, exclude_min_area, min_diameter, exclude_max_area, max_diameter
+    # if st.session_state.filtered_image is not None:
+    #     col1, col2, col3 = st.columns([1, 2, 1])
+    #     with col2:
+    #         start_analyze = st.button(
+    #             f"▶️ {LANG['Почати аналіз']}",
+    #             width='stretch',
+    #             disabled=(num_of_structures < 1)
+    #         )
+
+    return filtered_image, h0_nm, exclude_min_area, min_diameter, exclude_max_area, max_diameter, num_of_structures
 
 
 @st.fragment
@@ -1816,7 +1842,7 @@ if run_button_analyze:
     st.session_state.res_sens = None
     st.session_state.clustering = None
 
-with toptabs[0]:
+with (toptabs[0]):
     if st.session_state.analysis is not None:
         tabs_analys = st.tabs([
             f"🔢 **{LANG['Структура даних']}**",
@@ -1834,12 +1860,21 @@ with toptabs[0]:
             # height_dependent_analysis_all()
             # dict_height_dependent_analysis = height_dependent_analysis_results()
         with tabs_analys[2]:
-            filtered_image, h0_nm, excl_min_area, min_diameter, excl_max_area, max_diameter = segmentation_and_filtration()
+            filtered_image, h0_nm, excl_min_area, min_diameter,\
+            excl_max_area, max_diameter, num_of_structures = segmentation_and_filtration()
+
             # filtered_image, h0_nm, min_diameter, max_diameter = segmentation_and_filtration()
+
+            # print("num of structures outsude fragment= ", st.session_state.num_of_structures_h0)
+
             if st.session_state.filtered_image is not None:
                 col1, col2, col3 = st.columns([1, 2, 1])
                 with col2:
-                    start_analyze = st.button(f"▶️ {LANG['Почати аналіз']}", width='stretch')
+                    start_analyze = st.button(
+                        f"▶️ {LANG['Почати аналіз']}",
+                        width='stretch'
+                    )
+
         with tabs_analys[3]:
             image_name = st.session_state.original_image_file_name
             st.markdown(f"**{LANG['Формування звіту за результатами аналізу зображення']} ({image_name})**")
@@ -1856,22 +1891,29 @@ if start_analyze:
     full_area_cm2 = res["full_image_area_nm2"] * 1E-14
     nbins = st.session_state.n_bins  # 15
     labels = st.session_state.labels
-    num_grains, centroids_stat, df_dist, df, stats_df, cos2t = run_button_calculations(labels,
-                                                                                scale_nm_px,
-                                                                                full_image_area_nm2,
-                                                                                topo_map)
-    st.session_state.centroids_stat = centroids_stat
-    st.session_state.distances = df_dist
-    st.session_state.data_frame = df
-    st.session_state.table_statistics = stats_df
-    st.session_state.cos2t = cos2t
-    # print(st.session_state.table_statistics)
+
+    if num_of_structures > 0:
+        num_grains, df_main, df_elips, df_dist, stats_df, centroids_stat, cos2t = run_button_calculations(
+            labels, scale_nm_px, full_image_area_nm2, topo_map)
+        st.session_state.num_grains = num_grains
+        st.session_state.centroids_stat = centroids_stat
+        st.session_state.distances = df_dist
+        st.session_state.data_frame = df_main
+        st.session_state.data_elips = df_elips
+        st.session_state.table_statistics = stats_df
+        st.session_state.cos2t = cos2t
+    else:
+        num_grains = 0
+        st.session_state.data_frame = None
 
     # with toptabs[0]:
-    with tabs_analys[2]:
-        if num_grains > 1:
+    with ((tabs_analys[2])):
+        if st.session_state.num_grains > 3:
             # show_table_with_statistics()
-            dict_distribs, dict_datasets = calc_all_distributions(df, nbins, full_area_cm2)
+            df_main = st.session_state.data_frame
+            df_elips = st.session_state.data_elips
+            df_dist = st.session_state.distances
+            dict_distribs, dict_datasets = calc_all_distributions(df_main, df_elips, df_dist, nbins, full_area_cm2)
             st.session_state.dict_calculated_distributions = dict_distribs
             st.session_state.dict_calculated_datasets = dict_datasets
 
@@ -1879,106 +1921,132 @@ if start_analyze:
                 st.session_state.numbins = {
                     name: st.session_state.n_bins for name in dict_datasets
                 }
+        else:
+            # st.warning(LANG["Для побудови розподілів необхідно як мінімум 4 структури"])
+            st.warning(f"{LANG["Для побудови розподілів необхідно як мінімум 4 структури"]}"
+                       f"\n\n{LANG["Змініть рівень висоти для аналізу"]}")
+            # st.warning(LANG["Недостатньо даних для кластеризації"])
 
-            if excl_min_area and not excl_max_area:
-                line_EN = f"Statistical properties of structures with sizes larger than {min_diameter:.1f} (nm) on a height h₀ = {h0_nm:.1f} (nm)"
-                line_UA = f"Статистичні характеристики структур з розмірами більше ніж {min_diameter:.1f} (нм) на висоті h₀ = {h0_nm:.1f} (нм)"
-            elif excl_max_area and not excl_min_area:
-                line_EN = f"Statistical properties of structures with sizes less than {max_diameter:.1f} (nm) on a height h₀ = {h0_nm:.1f} (nm)"
-                line_UA = f"Статистичні характеристики структур з розмірами менше ніж {max_diameter:.1f} (нм) на висоті h₀ = {h0_nm:.1f} (нм)"
-            elif excl_min_area and excl_max_area:
-                line_EN = f"Statistical properties of structures with sizes larger than {min_diameter:.1f} (nm) and less than {max_diameter:.1f} (nm) on a height h₀ = {h0_nm:.1f} (nm)"
-                line_UA = f"Статистичні характеристики структур з розмірами більше ніж {min_diameter:.1f} (нм) та менше ніж {max_diameter:.1f} (нм) на висоті h₀ = {h0_nm:.1f} (нм)"
-            else:
-                line_EN = f"Statistical properties of structures on a height h₀ = {h0_nm:.1f} (nm)"
-                line_UA = f"Статистичні характеристики структур на висоті h₀ = {h0_nm:.1f} (нм)"
+        if excl_min_area and not excl_max_area:
+            line_EN = f"Statistical properties of structures with sizes larger than {min_diameter:.1f} (nm) on a height h₀ = {h0_nm:.1f} (nm)"
+            line_UA = f"Статистичні характеристики структур з розмірами більше ніж {min_diameter:.1f} (нм) на висоті h₀ = {h0_nm:.1f} (нм)"
+        elif excl_max_area and not excl_min_area:
+            line_EN = f"Statistical properties of structures with sizes less than {max_diameter:.1f} (nm) on a height h₀ = {h0_nm:.1f} (nm)"
+            line_UA = f"Статистичні характеристики структур з розмірами менше ніж {max_diameter:.1f} (нм) на висоті h₀ = {h0_nm:.1f} (нм)"
+        elif excl_min_area and excl_max_area:
+            line_EN = f"Statistical properties of structures with sizes larger than {min_diameter:.1f} (nm) and less than {max_diameter:.1f} (nm) on a height h₀ = {h0_nm:.1f} (nm)"
+            line_UA = f"Статистичні характеристики структур з розмірами більше ніж {min_diameter:.1f} (нм) та менше ніж {max_diameter:.1f} (нм) на висоті h₀ = {h0_nm:.1f} (нм)"
+        else:
+            line_EN = f"Statistical properties of structures on a height h₀ = {h0_nm:.1f} (nm)"
+            line_UA = f"Статистичні характеристики структур на висоті h₀ = {h0_nm:.1f} (нм)"
 
-            st.session_state.table_caption_EN = line_EN
-            st.session_state.table_caption_UA = line_UA
+        st.session_state.table_caption_EN = line_EN
+        st.session_state.table_caption_UA = line_UA
 
             # st.session_state.table_caption_UA = f"Статистичні характеристики структур з розмірами від {int(min_diameter)} (нм) до {int(max_diameter)} (нм) на висоті h₀ = {int(h0_nm)} (нм)"
             # st.session_state.table_caption_EN = f"Statistical properties of structures with sizes from {int(min_diameter)} (nm) to {int(max_diameter)} (nm) on a height h₀ = {int(h0_nm)} (nm)"
-        else:
-            st.warning(LANG["Структури не знайдені"])
+        # else:
+        #     # st.warning(LANG["Структури не знайдені"])
+        #     st.warning(LANG["Змініть рівень висоти для аналізу"])
+        #     # st.warning(LANG["Недостатньо даних для кластеризації"])
+
 
 # with toptabs[0]:
 if st.session_state.data_frame is not None:
-
     with tabs_analys[2]:
-
         show_table_with_statistics()
-        st.divider()
-        st.subheader(f"📊 {LANG['Графічний Аналіз']}")
-        tabs = st.tabs([
-            f"📊 **{LANG['Розподіли розмірів']}**",
-            f"📈 **{LANG['Геометрія структур']}**",
-            f"📊 **{LANG['Розподіл відстаней']}**",
-            f"🤖 **{LANG['Кластеризація']}**",
-            # f"📝 **{LANG['Сформувати звіт']}**"
-        ])
 
-        option_for_xaxis = {
-            "none": f"{LANG['Без перетворень']}",
-            "log": f"{LANG['Логарифмічне перетворення']}"
-        }
-        option_for_yaxis = {
-            "dist": f"{LANG['Нормований розподіл']}",
-            "dens": f"{LANG['Густина структур']}"
-        }
-        with tabs[0]:
+    if st.session_state.num_grains > 3:
+        with tabs_analys[2]:
+            st.divider()
+            st.subheader(f"📊 {LANG['Графічний Аналіз']}")
+            tabs = st.tabs([
+                f"📊 **{LANG['Розподіли розмірів']}**",
+                f"📈 **{LANG['Геометрія структур']}**",
+                f"📊 **{LANG['Розподіл відстаней']}**",
+                f"🤖 **{LANG['Кластеризація']}**",
+                # f"📝 **{LANG['Сформувати звіт']}**"
+            ])
 
-            # st.session_state.n_bins = st.slider(LANG["Кількість бінів для розподілів"], 0, min(20, num_of_structures),
-            #                                     min(15, num_of_structures // 2))
+            option_for_xaxis = {
+                "none": f"{LANG['Без перетворень']}",
+                "log": f"{LANG['Логарифмічне перетворення']}"
+            }
+            option_for_yaxis = {
+                "dist": f"{LANG['Нормований розподіл']}",
+                "dens": f"{LANG['Густина структур']}"
+            }
+            with tabs[0]:
 
-            fig_area, caption_area = show_distribution("area", option_for_xaxis, option_for_yaxis, 'orange', LANG['Дані'])
-            st.divider()
-            fig_diameter, caption_diameter = show_distribution("diameter", option_for_xaxis, option_for_yaxis, 'orange', LANG['Дані'])
-            st.divider()
-            fig_perimeter, caption_perimeter = show_distribution("perimeter", option_for_xaxis, option_for_yaxis, 'orange', LANG['Дані'])
+                # st.session_state.n_bins = st.slider(LANG["Кількість бінів для розподілів"], 0, min(20, num_of_structures),
+                #                                     min(15, num_of_structures // 2))
 
-        with tabs[1]:
-            fig_circularity, caption_circularity = show_distribution("circularity", option_for_xaxis, option_for_yaxis, 'green', LANG['Дані'])
-            st.divider()
-            fig_majoraxis, caption_majoraxis = show_distribution("majoraxis", option_for_xaxis, option_for_yaxis, 'green', LANG['Дані'])
-            st.divider()
-            fig_minoraxis, caption_minoraxis = show_distribution("minoraxis", option_for_xaxis, option_for_yaxis, 'green', LANG['Дані'])
-            st.divider()
-            fig_aspect, caption_aspect = show_distribution("aspect", option_for_xaxis, option_for_yaxis, 'green', LANG['Дані'])
-            st.divider()
-            cos2t = st.session_state.cos2t
-            fig_label = f"{LANG['Дані: Параметр нематичного порядку']} (S={cos2t:.2f})"
-            fig_angle, caption_angle = show_distribution("angle", option_for_xaxis, option_for_yaxis, 'green', fig_label)
-            st.divider()
-            fig_foldangle, caption_foldangle = show_distribution("foldangle", option_for_xaxis, option_for_yaxis, 'green', fig_label)
+                fig_area, caption_area = show_distribution("area", option_for_xaxis, option_for_yaxis, 'orange', LANG['Дані'])
+                st.divider()
+                fig_diameter, caption_diameter = show_distribution("diameter", option_for_xaxis, option_for_yaxis, 'orange', LANG['Дані'])
+                st.divider()
+                fig_perimeter, caption_perimeter = show_distribution("perimeter", option_for_xaxis, option_for_yaxis, 'orange', LANG['Дані'])
 
-        with tabs[2]:
-            R_value = st.session_state.centroids_stat.loc[
-                st.session_state.centroids_stat["Param"] == "R-Index center", "Value"].values[0]
-            fig_label = f"{LANG['Дані: Індекс Кларка-Еванса']} (R={R_value:.2f})"
-            fig_distances_centers, caption_distances_centers = show_distribution("distances_centers", option_for_xaxis, option_for_yaxis, 'teal', fig_label)
-            st.divider()
-            R_value = st.session_state.centroids_stat.loc[
-                st.session_state.centroids_stat["Param"] == "R-Index grains", "Value"].values[0]
-            fig_label = f"{LANG['Дані: Індекс Кларка-Еванса']} (R={R_value:.2f})"
-            fig_distances_edge2edge, caption_distances_edge2edge = show_distribution("distances_edge2edge", option_for_xaxis, option_for_yaxis, 'teal', fig_label)
+            with tabs[1]:
+                fig_circularity, caption_circularity = show_distribution("circularity", option_for_xaxis, option_for_yaxis, 'green', LANG['Дані'])
+                st.divider()
+                fig_majoraxis, caption_majoraxis = show_distribution("majoraxis", option_for_xaxis, option_for_yaxis, 'green', LANG['Дані'])
+                st.divider()
+                fig_minoraxis, caption_minoraxis = show_distribution("minoraxis", option_for_xaxis, option_for_yaxis, 'green', LANG['Дані'])
+                st.divider()
+                fig_aspect, caption_aspect = show_distribution("aspect", option_for_xaxis, option_for_yaxis, 'green', LANG['Дані'])
+                st.divider()
+                cos2t = st.session_state.cos2t
+                fig_label = f"{LANG['Дані: Параметр нематичного порядку']} (S={cos2t:.2f})"
+                fig_angle, caption_angle = show_distribution("angle", option_for_xaxis, option_for_yaxis, 'green', fig_label)
+                st.divider()
+                fig_foldangle, caption_foldangle = show_distribution("foldangle", option_for_xaxis, option_for_yaxis, 'green', fig_label)
 
-        with tabs[3]:
-            st.markdown(f"**{LANG['Кластеризація']}**")
-            col_in, col_out = st.columns(2)
-            with col_in:
-                n_cl = st.slider(LANG["Кількість кластерів"], 2, 5, 3)
-            with col_out:
-                input_ncl = st.button(f"▶️ {LANG['Провести кластеризацію']}")
+            with tabs[2]:
+                R_value = st.session_state.centroids_stat.loc[
+                    st.session_state.centroids_stat["Param"] == "R-Index center", "Value"].values[0]
+                fig_label = f"{LANG['Дані: Індекс Кларка-Еванса']} (R={R_value:.2f})"
+                fig_distances_centers, caption_distances_centers = show_distribution("distances_centers", option_for_xaxis, option_for_yaxis, 'teal', fig_label)
+                st.divider()
+                R_value = st.session_state.centroids_stat.loc[
+                    st.session_state.centroids_stat["Param"] == "R-Index grains", "Value"].values[0]
+                fig_label = f"{LANG['Дані: Індекс Кларка-Еванса']} (R={R_value:.2f})"
+                fig_distances_edge2edge, caption_distances_edge2edge = show_distribution("distances_edge2edge", option_for_xaxis, option_for_yaxis, 'teal', fig_label)
 
-            if input_ncl:
-                df = st.session_state.data_frame
-                df_plot = df[['Diameter (nm)', 'Circularity', 'Angle of elips', 'Fold angle']].copy()
-                plot_data = make_clusterization(df_plot, n_cl)
-                st.session_state.clustering = plot_data
+            with tabs[3]:
+                st.markdown(f"**{LANG['Кластеризація']}**")
+                col_in, col_out = st.columns(2)
+                with col_in:
+                    n_cl = st.slider(LANG["Кількість кластерів"], 2, 5, 3)
+                with col_out:
+                    input_ncl = st.button(f"▶️ {LANG['Провести кластеризацію']}")
 
-            fig_pairplot = show_pairplot()
-            st.divider()
-            fig_violinplot = show_violinplot()
+                if input_ncl:
+                    df_main = st.session_state.data_frame
+                    df_elips = st.session_state.data_elips
+                    df_plot = pd.concat(
+                        [
+                            df_main[['Diameter (nm)', 'Circularity']],
+                            df_elips[['Angle of elips', 'Fold angle']]
+                        ],
+                        axis=1
+                    )
+                    df_plot = df_plot.dropna(
+                        subset=['Angle of elips', 'Fold angle']
+                    )
+
+                    if len(df_plot) < 10:
+                        st.warning(f"{LANG["Недостатньо даних для кластеризації"]} \n\n {LANG["Змініть рівень висоти для аналізу"]}")
+                    else:
+                        plot_data = make_clusterization(df_plot, n_cl)
+                        # df = st.session_state.data_frame
+                        # df_plot = df[['Diameter (nm)', 'Circularity', 'Angle of elips', 'Fold angle']].copy()
+                        # plot_data = make_clusterization(df_plot, n_cl)
+                        st.session_state.clustering = plot_data
+
+                fig_pairplot = show_pairplot()
+                st.divider()
+                fig_violinplot = show_violinplot()
 
         # # REPORT
         # with tabs[4]:
@@ -2402,6 +2470,10 @@ if st.session_state.analysis is not None and generate_report:
         tables_dict_with_index = {
             st.session_state.table_caption_EN: df_statistics
         }
+    else:
+        tables_dict_with_index = None
+
+    if st.session_state.data_frame is not None and st.session_state.num_grains > 3:
         if st.session_state.lang != "EN":
             dic = st.session_state[f"plot_for_report_area"]
             fig_area = make_figure_distribution_png(
@@ -2487,7 +2559,7 @@ if st.session_state.analysis is not None and generate_report:
             }.items() if fig is not None
         }
     else:
-        tables_dict_with_index = None
+        # tables_dict_with_index = None
         figs_dict_size = None
         figs_dict_geometry = None
         figs_dict_distances = None

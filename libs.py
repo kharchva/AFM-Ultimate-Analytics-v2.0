@@ -579,9 +579,16 @@ def run_button_analysis(cropped_img, real_width_nm, real_height_nm, thresh_type,
 
 
 def run_button_calculations(labels, scale_nm_px, full_image_area_nm2, topo_map):
-    data_list = []
+    main_data_list = []
+    elips_data_list = []
     centroids = []
     radii = []
+    df_dist = pd.DataFrame()
+    df_main = pd.DataFrame()
+    df_elips = pd.DataFrame()
+    stats_df = pd.DataFrame()
+    centroids_stat = pd.DataFrame()
+
     unique_labels = np.unique(labels)
 
     for lbl in unique_labels:
@@ -594,20 +601,7 @@ def run_button_calculations(labels, scale_nm_px, full_image_area_nm2, topo_map):
         area_nm2 = area_px * (scale_nm_px ** 2)
         perimeter_nm = cv2.arcLength(cnt, True) * scale_nm_px
         equiv_d = np.sqrt(4 * area_nm2 / np.pi)
-        radius = equiv_d / 2
-        radii.append(radius)
         circularity = (4 * np.pi * area_nm2) / (perimeter_nm ** 2) if perimeter_nm > 0 else 0
-
-        if len(cnt) >= 5:
-            (cx, cy), (MA, ma), angle = cv2.fitEllipse(cnt)
-            major = max(MA, ma) * scale_nm_px
-            minor = min(MA, ma) * scale_nm_px
-            aspect = major / minor if minor > 0 else 0
-        else:
-            major = 0
-            minor = 0
-            angle = 0
-            aspect = 1.0
 
         grain_pixels = (labels == lbl)
         z_vals = topo_map[grain_pixels]
@@ -615,27 +609,38 @@ def run_button_calculations(labels, scale_nm_px, full_image_area_nm2, topo_map):
         max_h = np.max(z_vals) if len(z_vals) > 0 else 0
         mean_h = np.mean(z_vals) if len(z_vals) > 0 else 0
 
-        M = cv2.moments(cnt)
-        if M["m00"] != 0:
-            centroids.append([(M["m10"] / M["m00"]) * scale_nm_px, (M["m01"] / M["m00"]) * scale_nm_px])
-
-        theta_folded = np.minimum(angle, 180 - angle)
-        data_list.append({
+        main_data_list.append({
             "Area (nm^2)": area_nm2,
             "Diameter (nm)": equiv_d,
             "Perimeter (nm)": perimeter_nm,
             "Circularity": circularity,
-            "Major axis of elips (nm)": major,
-            "Minor axis of elips (nm)": minor,
-            "Aspect Ratio": aspect,
-            "Angle of elips": angle,
-            "Fold angle": theta_folded,
             "Height from h₀ (nm)": max_h,
             "Mean Height (nm)": mean_h,
             "Log_Area": np.log10(area_nm2) if area_nm2 > 0 else 0,
             "Log_Diameter": np.log10(equiv_d) if equiv_d > 0 else 0,
             "Log_Perimeter": np.log10(perimeter_nm) if perimeter_nm > 0 else 0,
             "Log_Circularity": np.log10(circularity) if circularity > 0 else 0,
+        })
+
+        if len(cnt) >= 5:
+            (cx, cy), (MA, ma), angle = cv2.fitEllipse(cnt)
+            major = max(MA, ma) * scale_nm_px
+            minor = min(MA, ma) * scale_nm_px
+            aspect = major / minor if minor > 0 else 0
+            theta_folded = np.minimum(angle, 180 - angle)
+        else:
+            major = np.nan
+            minor = np.nan
+            aspect = np.nan
+            theta_folded = np.nan
+            angle = np.nan
+
+        elips_data_list.append({
+            "Major axis of elips (nm)": major,
+            "Minor axis of elips (nm)": minor,
+            "Aspect Ratio": aspect,
+            "Angle of elips": angle,
+            "Fold angle": theta_folded,
             "Log_Majoraxis": np.log10(major) if major > 0 else 0,
             "Log_Minoraxis": np.log10(minor) if minor > 0 else 0,
             "Log_Aspectratio": np.log10(aspect) if aspect > 0 else 0,
@@ -643,71 +648,36 @@ def run_button_calculations(labels, scale_nm_px, full_image_area_nm2, topo_map):
             "Log_Foldangle": np.log10(theta_folded) if theta_folded > 0 else 0
         })
 
-    if len(centroids) > 1:
-        num_grains = len(centroids)
-        k_value = min(num_grains, 8)
-        # full_image_area_nm2 = st.session_state.analysis["full_image_area_nm2"]
-        # area_cm2 = full_image_area_nm2 * 1e-14  # nm² → см²
+        M = cv2.moments(cnt)
+        if M["m00"] != 0:
+            centroids.append([(M["m10"] / M["m00"]) * scale_nm_px, (M["m01"] / M["m00"]) * scale_nm_px])
+            radii.append(equiv_d / 2)
+
+    df_main = pd.DataFrame(main_data_list)
+    df_elips = pd.DataFrame(elips_data_list)
+
+    if not df_elips.empty:
+        theta = np.deg2rad(df_elips['Angle of elips'])
+        cos2t = np.nanmean(np.cos(2 * theta))
+    else:
+        cos2t = 0.0
+
+    edge_distances = []
+    center_distances = []
+    num_grains = len(centroids)
+    if num_grains > 1:
         tree = cKDTree(centroids)
-
-# ################### First-neighbor distance (can be less than 2r) ####################
-#         dd, idx = tree.query(centroids, k=2)
-#         mean_nn = np.mean(dd[:, 1])
-#
-#         edge_distances = []
-#         for i in range(len(centroids)):
-#             j = idx[i, 1]
-#             center_dist = dd[i, 1]
-#             edge_dist = max(0, center_dist - (radii[i] + radii[j]))
-#             edge_distances.append(edge_dist)
-#
-#         mean_nn_grains = np.mean(edge_distances)
-#
-#         rho = num_grains / full_image_area_nm2
-#         R_centroids = mean_nn / (0.5 / np.sqrt(rho))
-#         R_grains = mean_nn_grains / (0.5 / np.sqrt(rho))
-#
-#         centroids_stat = pd.DataFrame({
-#             "Param": ["Mean NN center (nm)", "R-Index center", "Mean NN grains (nm)", "R-Index grains"],
-#             "Value": [mean_nn, R_centroids, mean_nn_grains, R_grains]})
-#
-#         df_dist = pd.DataFrame({
-#             "Nearest Neighbor (nm)": dd[:, 1],
-#             "Edge Distance (nm)": edge_distances
-#         })
-#
-#         df = pd.DataFrame(data_list)
-#
-#         df["Nearest Neighbor (nm)"] = dd[:, 1]
-#         df["Edge Distance (nm)"] = edge_distances
-#
-#         df["Log Nearest Neighbor (nm)"] = np.where(dd[:, 1] > 0, np.log10(dd[:, 1]), 0)
-#         df["Log Edge Distance (nm)"] = np.where(np.array(edge_distances) > 0,
-#                                                 np.log10(edge_distances), 0)
-# ######################################################################################
-
-################### Nearest-neighbor distance (can NOT be less than 2r) ##############
-        # nnd, idx = tree.query(centroids, k=8)
-        nnd, idx = tree.query(centroids, k=k_value)
-        edge_distances = []
-        center_distances = []
-        for i in range(len(centroids)):
-            best_center_dist = np.inf
-            best_edge_dist = np.inf
-            for k in range(1, k_value):
-            # for k in range(1, 8):
+        nnd, idx = tree.query(centroids, k=num_grains)
+        for i in range(num_grains):
+            for k in range(1, num_grains):
                 j = idx[i, k]
                 center_dist = nnd[i, k]
-
                 edge_dist = center_dist - (radii[i] + radii[j])
 
-                if edge_dist > 0.1 and edge_dist < best_edge_dist: #(0.1 means 1 angstrom)
-                    best_edge_dist = edge_dist
-                    best_center_dist = center_dist
-
-            if best_center_dist < np.inf:
-                center_distances.append(best_center_dist)
-                edge_distances.append(best_edge_dist)
+                if edge_dist > 0.1:
+                    center_distances.append(center_dist)
+                    edge_distances.append(edge_dist)
+                    break
 
         mean_nn = np.mean(center_distances)
         mean_nn_grains = np.mean(edge_distances)
@@ -715,269 +685,287 @@ def run_button_calculations(labels, scale_nm_px, full_image_area_nm2, topo_map):
         rho = num_grains / full_image_area_nm2
         R_centroids = mean_nn / (0.5 / np.sqrt(rho))
         R_grains = mean_nn_grains / (0.5 / np.sqrt(rho))
+    else:
+        mean_nn = np.nan
+        mean_nn_grains = np.nan
+        rho = num_grains / full_image_area_nm2
+        R_centroids = np.nan
+        R_grains = np.nan
+        center_distances.append(np.nan)
+        edge_distances.append(np.nan)
 
-        centroids_stat = pd.DataFrame({
-            "Param": ["Mean NN center (nm)", "R-Index center", "Mean NN grains (nm)", "R-Index grains"],
-            "Value": [mean_nn, R_centroids, mean_nn_grains, R_grains]})
+    centroids_stat = pd.DataFrame({
+        "Param": ["Mean NN center (nm)", "R-Index center", "Mean NN grains (nm)", "R-Index grains"],
+        "Value": [mean_nn, R_centroids, mean_nn_grains, R_grains]})
 
-        df_dist = pd.DataFrame({
-            "Nearest Neighbor (nm)": center_distances,
-            "Edge Distance (nm)": edge_distances
-        })
+    df_dist = pd.DataFrame({
+        "Nearest Neighbor (nm)": center_distances,
+        "Edge Distance (nm)": edge_distances
+    })
+    df_dist["Log Nearest Neighbor (nm)"] = np.where(np.array(center_distances) > 0,
+                                               np.log10(center_distances), 0)
+    df_dist["Log Edge Distance (nm)"] = np.where(np.array(edge_distances) > 0,
+                                            np.log10(edge_distances), 0)
 
-        df = pd.DataFrame(data_list)
+    cols_main = ["Area (nm^2)",
+                 "Diameter (nm)",
+                 "Perimeter (nm)",
+                 "Circularity",
+                 "Height from h₀ (nm)"
+                 ]
 
-        df["Nearest Neighbor (nm)"] = center_distances
-        df["Edge Distance (nm)"] = edge_distances
+    cols_elips = ["Major axis of elips (nm)",
+                  "Minor axis of elips (nm)",
+                  "Aspect Ratio",
+                  "Angle of elips",
+                  "Fold angle"
+                  ]
 
-        df["Log Nearest Neighbor (nm)"] = np.where(np.array(center_distances) > 0,
-                                                   np.log10(center_distances), 0)
-        df["Log Edge Distance (nm)"] = np.where(np.array(edge_distances) > 0,
-                                                np.log10(edge_distances), 0)
-######################################################################################
+    cols_dist = ["Nearest Neighbor (nm)",
+                 "Edge Distance (nm)"
+                 ]
 
-        # st.session_state.data_frame = df
+    stats_main_df = df_main[cols_main].describe().T
+    stats_elips_df = df_elips[cols_elips].describe().T
+    stats_dist_df = df_dist[cols_dist].describe().T
 
-        cols_geom = ["Area (nm^2)",
-                     "Diameter (nm)",
-                     "Perimeter (nm)",
-                     "Circularity",
-                     "Major axis of elips (nm)",
-                     "Minor axis of elips (nm)",
-                     "Aspect Ratio",
-                     "Angle of elips",
-                     "Fold angle",
-                     "Height from h₀ (nm)",
-                     "Nearest Neighbor (nm)",
-                     "Edge Distance (nm)"
-                     ]
+    frames = [stats_main_df]
+    if not df_elips.empty:
+        frames.append(stats_elips_df)
+    if not df_dist.empty:
+        frames.append(stats_dist_df)
 
-        stats_df = df[cols_geom].describe().T
-        stats_df = stats_df.drop(columns=['count', '25%', '75%'])
-        stats_df.rename(columns={'50%': 'median'}, inplace=True)
-        stats_df['CV (%)'] = np.where(
-            stats_df['mean'] != 0,
-            (stats_df['std'] / stats_df['mean']) * 100,
-            np.nan
-        )
-        # st.session_state.table_statistics = stats_df
-        theta = np.deg2rad(df['Angle of elips'])
-        cos2t = np.mean(np.cos(2 * theta))
+    # stats_df = pd.concat(
+    #     [stats_main_df, stats_elips_df, stats_dist_df],
+    #     axis=0
+    # )
 
-    return num_grains, centroids_stat, df_dist, df, stats_df, cos2t
+    stats_df = pd.concat(frames)
+    stats_df = stats_df.drop(columns=['count', '25%', '75%'])
+    stats_df.rename(columns={'50%': 'median'}, inplace=True)
+    stats_df['CV (%)'] = np.where(
+        stats_df['mean'] != 0,
+        (stats_df['std'] / stats_df['mean']) * 100,
+        np.nan
+    )
+
+    return num_grains, df_main, df_elips, df_dist, stats_df, centroids_stat, cos2t
+# return num_grains, centroids_stat, df_dist, df_main, stats_df, cos2t
 
 
-def calc_all_distributions(df, nbins, area_cm2):
+def calc_all_distributions(df_main, df_elips_all, df_dist, nbins, area_cm2):
+    df_elips = df_elips_all.dropna()
+
     dict_calculated_distributions = {}
     dict_datasets = {}
 
     #############################   DIAMETER   ###########################################################
 
     name = "diameter_dist"
-    distr, data = calc_distribution_from_data(df['Diameter (nm)'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Diameter (nm)'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(diameter)_dist"
-    distr, data = calc_distribution_from_data(df['Log_Diameter'], name, nbins,"dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Log_Diameter'], name, nbins,"dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "diameter_dens"
-    distr, data = calc_distribution_from_data(df['Diameter (nm)'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Diameter (nm)'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(diameter)_dens"
-    distr, data = calc_distribution_from_data(df['Log_Diameter'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Log_Diameter'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     #############################   AREA   ###########################################################
 
     name = "area_dist"
-    distr, data = calc_distribution_from_data(df['Area (nm^2)'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Area (nm^2)'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(area)_dist"
-    distr, data = calc_distribution_from_data(df['Log_Area'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Log_Area'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "area_dens"
-    distr, data = calc_distribution_from_data(df['Area (nm^2)'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Area (nm^2)'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(area)_dens"
-    distr, data = calc_distribution_from_data(df['Log_Area'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Log_Area'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     #############################   PERIMETER   ###########################################################
 
     name = "perimeter_dist"
-    distr, data = calc_distribution_from_data(df['Perimeter (nm)'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Perimeter (nm)'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(perimeter)_dist"
-    distr, data = calc_distribution_from_data(df['Log_Perimeter'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Log_Perimeter'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "perimeter_dens"
-    distr, data = calc_distribution_from_data(df['Perimeter (nm)'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Perimeter (nm)'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(perimeter)_dens"
-    distr, data = calc_distribution_from_data(df['Log_Perimeter'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Log_Perimeter'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     #############################   CIRCULARITY   ###########################################################
 
     name = "circularity_dist"
-    distr, data = calc_distribution_from_data(df['Circularity'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Circularity'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "circularity_dens"
-    distr, data = calc_distribution_from_data(df['Circularity'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_main['Circularity'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     #############################   MAJOR AXIS  ###########################################################
 
     name = "majoraxis_dist"
-    distr, data = calc_distribution_from_data(df['Major axis of elips (nm)'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Major axis of elips (nm)'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(majoraxis)_dist"
-    distr, data = calc_distribution_from_data(df['Log_Majoraxis'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Log_Majoraxis'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "majoraxis_dens"
-    distr, data = calc_distribution_from_data(df['Major axis of elips (nm)'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Major axis of elips (nm)'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(majoraxis)_dens"
-    distr, data = calc_distribution_from_data(df['Log_Majoraxis'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Log_Majoraxis'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     #############################   MINOR AXIS   ###########################################################
 
     name = "minoraxis_dist"
-    distr, data = calc_distribution_from_data(df['Minor axis of elips (nm)'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Minor axis of elips (nm)'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(minoraxis)_dist"
-    distr, data = calc_distribution_from_data(df['Log_Minoraxis'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Log_Minoraxis'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "minoraxis_dens"
-    distr, data = calc_distribution_from_data(df['Minor axis of elips (nm)'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Minor axis of elips (nm)'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(minoraxis)_dens"
-    distr, data = calc_distribution_from_data(df['Log_Minoraxis'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Log_Minoraxis'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     #############################   ASPECT RATIO   ###########################################################
 
     name = "aspect_dist"
-    distr, data = calc_distribution_from_data(df['Aspect Ratio'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Aspect Ratio'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(aspect)_dist"
-    distr, data = calc_distribution_from_data(df['Log_Aspectratio'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Log_Aspectratio'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "aspect_dens"
-    distr, data = calc_distribution_from_data(df['Aspect Ratio'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Aspect Ratio'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(aspect)_dens"
-    distr, data = calc_distribution_from_data(df['Log_Aspectratio'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Log_Aspectratio'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     #############################   ANGLE   ###########################################################
 
     name = "angle_dist"
-    distr, data = calc_distribution_from_data(df['Angle of elips'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Angle of elips'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(angle)_dist"
-    distr, data = calc_distribution_from_data(df['Log_Angle'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Log_Angle'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "angle_dens"
-    distr, data = calc_distribution_from_data(df['Angle of elips'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Angle of elips'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(angle)_dens"
-    distr, data = calc_distribution_from_data(df['Log_Angle'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Log_Angle'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
 ###########
 
     name = "foldangle_dist"
-    distr, data = calc_distribution_from_data(df['Fold angle'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Fold angle'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(foldangle)_dist"
-    distr, data = calc_distribution_from_data(df['Log_Foldangle'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Log_Foldangle'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "foldangle_dens"
-    distr, data = calc_distribution_from_data(df['Fold angle'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Fold angle'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(foldangle)_dens"
-    distr, data = calc_distribution_from_data(df['Log_Foldangle'], name, nbins, "dens", area_cm2)
+    distr, data = calc_distribution_from_data(df_elips['Log_Foldangle'], name, nbins, "dens", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     #############################   DISTANCES   ###########################################################
 
     name = "distances_centers_dist"
-    distr, data = calc_distribution_from_data(df['Nearest Neighbor (nm)'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_dist['Nearest Neighbor (nm)'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(distances_centers)_dist"
-    distr, data = calc_distribution_from_data(df['Log Nearest Neighbor (nm)'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_dist['Log Nearest Neighbor (nm)'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "distances_edge2edge_dist"
-    distr, data = calc_distribution_from_data(df['Edge Distance (nm)'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_dist['Edge Distance (nm)'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
     name = "log(distances_edge2edge)_dist"
-    distr, data = calc_distribution_from_data(df['Log Edge Distance (nm)'], name, nbins, "dist", area_cm2)
+    distr, data = calc_distribution_from_data(df_dist['Log Edge Distance (nm)'], name, nbins, "dist", area_cm2)
     dict_calculated_distributions[name] = distr
     dict_datasets[name] = data
 
