@@ -616,10 +616,14 @@ def run_button_calculations(labels, scale_nm_px, full_image_area_nm2, topo_map):
             "Circularity": circularity,
             "Height from h₀ (nm)": max_h,
             "Mean Height (nm)": mean_h,
-            "Log_Area": np.log10(area_nm2) if area_nm2 > 0 else 0,
-            "Log_Diameter": np.log10(equiv_d) if equiv_d > 0 else 0,
-            "Log_Perimeter": np.log10(perimeter_nm) if perimeter_nm > 0 else 0,
-            "Log_Circularity": np.log10(circularity) if circularity > 0 else 0,
+            # "Log_Area": np.log10(area_nm2) if area_nm2 > 0 else 0,
+            # "Log_Diameter": np.log10(equiv_d) if equiv_d > 0 else 0,
+            # "Log_Perimeter": np.log10(perimeter_nm) if perimeter_nm > 0 else 0,
+            # "Log_Circularity": np.log10(circularity) if circularity > 0 else 0
+            "Log_Area": np.log10(area_nm2) if area_nm2 > 0 else np.nan,
+            "Log_Diameter": np.log10(equiv_d) if equiv_d > 0 else np.nan,
+            "Log_Perimeter": np.log10(perimeter_nm) if perimeter_nm > 0 else np.nan,
+            "Log_Circularity": np.log10(circularity) if circularity > 0 else np.nan
         })
 
         if len(cnt) >= 5:
@@ -641,11 +645,16 @@ def run_button_calculations(labels, scale_nm_px, full_image_area_nm2, topo_map):
             "Aspect Ratio": aspect,
             "Angle of elips": angle,
             "Fold angle": theta_folded,
-            "Log_Majoraxis": np.log10(major) if major > 0 else 0,
-            "Log_Minoraxis": np.log10(minor) if minor > 0 else 0,
-            "Log_Aspectratio": np.log10(aspect) if aspect > 0 else 0,
-            "Log_Angle": np.log10(angle) if angle > 0 else 0,
-            "Log_Foldangle": np.log10(theta_folded) if theta_folded > 0 else 0
+            # "Log_Majoraxis": np.log10(major) if major > 0 else 0,
+            # "Log_Minoraxis": np.log10(minor) if minor > 0 else 0,
+            # "Log_Aspectratio": np.log10(aspect) if aspect > 0 else 0,
+            # "Log_Angle": np.log10(angle) if angle > 0 else 0,
+            # "Log_Foldangle": np.log10(theta_folded) if theta_folded > 0 else 0
+            "Log_Majoraxis": np.log10(major) if pd.notna(major) and major > 0 else np.nan,
+            "Log_Minoraxis": np.log10(minor) if pd.notna(minor) and minor > 0 else np.nan,
+            "Log_Aspectratio": np.log10(aspect) if pd.notna(aspect) and aspect > 0 else np.nan,
+            "Log_Angle": np.log10(angle) if pd.notna(angle) and angle > 0 else np.nan,
+            "Log_Foldangle": np.log10(theta_folded) if pd.notna(theta_folded) and theta_folded > 0 else np.nan
         })
 
         M = cv2.moments(cnt)
@@ -702,10 +711,22 @@ def run_button_calculations(labels, scale_nm_px, full_image_area_nm2, topo_map):
         "Nearest Neighbor (nm)": center_distances,
         "Edge Distance (nm)": edge_distances
     })
-    df_dist["Log Nearest Neighbor (nm)"] = np.where(np.array(center_distances) > 0,
-                                               np.log10(center_distances), 0)
-    df_dist["Log Edge Distance (nm)"] = np.where(np.array(edge_distances) > 0,
-                                            np.log10(edge_distances), 0)
+    # df_dist["Log Nearest Neighbor (nm)"] = np.where(np.array(center_distances) > 0,
+    #                                            np.log10(center_distances), 0)
+    # df_dist["Log Edge Distance (nm)"] = np.where(np.array(edge_distances) > 0,
+    #                                         np.log10(edge_distances), 0)
+
+    df_dist["Log Nearest Neighbor (nm)"] = np.where(
+        np.array(center_distances) > 0,
+        np.log10(center_distances),
+        np.nan
+    )
+
+    df_dist["Log Edge Distance (nm)"] = np.where(
+        np.array(edge_distances) > 0,
+        np.log10(edge_distances),
+        np.nan
+    )
 
     cols_main = ["Area (nm^2)",
                  "Diameter (nm)",
@@ -753,8 +774,10 @@ def run_button_calculations(labels, scale_nm_px, full_image_area_nm2, topo_map):
 # return num_grains, centroids_stat, df_dist, df_main, stats_df, cos2t
 
 
-def calc_all_distributions(df_main, df_elips_all, df_dist, nbins, area_cm2):
+def calc_all_distributions(df_main_all, df_elips_all, df_dist_all, nbins, area_cm2):
+    df_main = df_main_all.dropna()
     df_elips = df_elips_all.dropna()
+    df_dist = df_dist_all.dropna()
 
     dict_calculated_distributions = {}
     dict_datasets = {}

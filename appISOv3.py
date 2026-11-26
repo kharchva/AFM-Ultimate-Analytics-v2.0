@@ -1638,8 +1638,22 @@ def show_distribution(
     # if recalc and numbins != curr_bins:
     if numbins != curr_bins:
         st.session_state.numbins[key] = numbins
-        data = st.session_state.data_frame[key_to_df[key]]
-        # print(len(data))
+
+        column = key_to_df[key]
+        for df in [
+            st.session_state.data_frame,
+            st.session_state.data_elips,
+            st.session_state.distances
+        ]:
+            if column in df.columns:
+                data = df[column]
+                break
+        # data = np.asarray(data)
+        # data = data[np.isfinite(data)]
+        data = data.dropna()
+
+        # data = st.session_state.data_frame[key_to_df[key]]
+
         area_cm2 = st.session_state.analysis["full_image_area_nm2"] * 1E-14
         distribs, datasets = calc_distribution_from_data(
             data, name_prefix, numbins, mode_y, area_cm2)
@@ -2642,3 +2656,7 @@ st.markdown(f"🔬 AFM Ultimate Analytics | 🏫 {LANG['[Сумський дер
             f"| 👤 {LANG['[Контакт](https://pom.sumdu.edu.ua/uk/kafedra/personalni-storinki/162-dvornichenko-a-v)']} "
             f"| © 2026 |")
 st.divider()
+
+# print(st.session_state.data_frame)
+# print(st.session_state.data_elips)
+# print(st.session_state.distances)
